@@ -11,3 +11,4 @@ En este proyecto, mostraremos como nuestro equipo ha aprovechado toda esta infor
 
 ### Cómo navegar este proyecto
 * Memoria.pdf: Resultados y resumen del trabajo
+* Más información será subida en un futuro
