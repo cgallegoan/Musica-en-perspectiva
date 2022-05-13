@@ -1,0 +1,151 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+load(file.choose())
+```
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+library(dbplyr)
+library(knitr)
+library(dplyr)
+
+
+```
+Elegimos las variables para el PCA
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+variablesnc = variablesnc[-15] # QUitamos la columna classical
+variablesnc = append(variablesnc, c('artists', 'id'))
+
+
+hola = final_data[final_data$popularity > 70,]
+hola2  =final_data[final_data$popularity <= 70 & final_data$popularity > 60,]
+
+
+datos = hola[,variablesnc]
+datos2 = hola2[, variablesnc]
+```
+
+
+Hacemos el PCA. Escalamos y centramos porque las unidades están en valores muy diferentes
+```{r}
+pca=PCA(datos,scale.unit = TRUE,graph=FALSE,ncp=10,quali.sup= c(13,14))
+pca2 = PCA(datos2,scale.unit = TRUE,graph=FALSE,ncp=10,quali.sup= c(13,14))
+```
+
+```{r}
+kable(get_eigenvalue(pca))
+
+eig.val <- get_eigenvalue(pca)
+VPmedio = 100 * (1/nrow(eig.val))
+
+fviz_eig(pca, addlabels = TRUE) +
+  geom_hline(yintercept=VPmedio, linetype=2, color="red") # scree plot
+```
+
+```{r}
+kable(get_eigenvalue(pca))
+
+eig.val <- get_eigenvalue(pca)
+VPmedio = 100 * (1/nrow(eig.val))
+
+fviz_eig(pca, addlabels = TRUE) +
+  geom_hline(yintercept=VPmedio, linetype=2, color="red") # scree plot
+```
+
+
+
+```{r T2, fig.width=5, fig.height=5}
+K = 4 #Explican un 71%
+#DENTRO DEL PCA, pca$ind($coord) (individuos) son los scores y pca$var($coord) son los loadings (multiplicados por la raiz cuadrada del valor propio), 
+#$contrib contribuciones relativas a las componentes (en porcentaje), 
+#$cos2 (que es igual a pca$coord^2) cuadrado de la correlacion r entre la componente principal y la variable. Mirar pdf de práctica 1
+misScores = pca$ind$coord[,1:K]
+miT2 = colSums(t(misScores**2) / eig.val[1:K])
+
+I = nrow(datos2)
+F95 = K*(I**2 - 1)/(I*(I - K)) * qf(0.95, K, I-K)
+F99 = K*(I**2 - 1)/(I*(I - K)) * qf(0.99, K, I-K)
+
+plot(1:length(miT2), miT2, type = "l", xlab = "Canciones", ylab = "T2")
+abline(h = F95, col = "orange", lty = 2, lwd = 2)
+abline(h = F99, col = "red3", lty = 2, lwd = 2)
+anomalas = which(miT2 > F99)
+```
+
+
+```{r T2, fig.width=5, fig.height=5}
+K = 4 #Explican un 71%
+#DENTRO DEL PCA, pca$ind($coord) (individuos) son los scores y pca$var($coord) son los loadings (multiplicados por la raiz cuadrada del valor propio), 
+#$contrib contribuciones relativas a las componentes (en porcentaje), 
+#$cos2 (que es igual a pca$coord^2) cuadrado de la correlacion r entre la componente principal y la variable. Mirar pdf de práctica 1
+misScores = pca2$ind$coord[,1:K]
+miT2 = colSums(t(misScores**2) / eig.val[1:K])
+
+I = nrow(datos2)
+F95 = K*(I**2 - 1)/(I*(I - K)) * qf(0.95, K, I-K)
+F99 = K*(I**2 - 1)/(I*(I - K)) * qf(0.99, K, I-K)
+
+plot(1:length(miT2), miT2, type = "l", xlab = "Canciones", ylab = "T2")
+abline(h = F95, col = "orange", lty = 2, lwd = 2)
+abline(h = F99, col = "red3", lty = 2, lwd = 2)
+anomalas = which(miT2 > F99)
+```
+
+
+```{r}
+#Datos canciones de popularity > 70
+fviz_pca_var(pca, axes = c(1,2), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_pca_var(pca, axes = c(3,4), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_contrib(pca, choice = "var", axes = 1)
+fviz_contrib(pca, choice = "var", axes = 2)
+fviz_contrib(pca, choice = "var", axes = 3)
+fviz_contrib(pca, choice = "var", axes = 4)
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+#Datos canciones con popularity  50 < x < 70
+fviz_pca_var(pca2, axes = c(1,2), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_pca_var(pca2, axes = c(1,4), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_contrib(pca2, choice = "var", axes = 1)
+fviz_contrib(pca2, choice = "var", axes = 2)
+fviz_contrib(pca2, choice = "var", axes = 3)
+fviz_contrib(pca2, choice = "var", axes = 4)
+
+```
+
+
+
+```{r}
+
+fviz_pca_var(pca2, axes = c(1,2), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+fviz_pca_var(pca, axes = c(1,2), repel = TRUE, col.var = "contrib",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"))
+```
+
+
+
+
+
+
+

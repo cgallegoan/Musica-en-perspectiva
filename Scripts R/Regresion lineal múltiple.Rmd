@@ -1,0 +1,649 @@
+---
+title: "Regresión Lineal Múltiple y Análisis Discriminante"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, echo=FALSE}
+library(knitr)
+library(dplyr)
+library(psych)
+library(GGally)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+library(caret)
+library(MASS)
+```
+
+# REGRESIÓN LINEAL MÚLTIPLE
+
+A continuación, pasaremos a cargar los datos que utlizaremos para realizar estas técnicas que nos van a permetir predecir una variable. En este caso, la variable dependendiente será la popularidad, y el objetivo es intentar predecirla a partir de varias variables explicativas numéricas que recogen información sobre las características de la canción. Los datos seleccionados corresponden a todo el conjunto a excepción de las canciones clásicas, ya que este genero difiere significativamente del resto respecto a sus características y no nos interesa valorar esta opción ya que la popularidad de este tipo de canciones es baja y también buscamos encontrar las características que contribuyen más a tener una alta popularidad.
+
+En primer lugar, cargamos los datos: 
+
+```{r Regresión Lineal Múltiple}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+Seguidamente, nos quedamos con las numéricas y quitamos la variable year del conjunto de datos, ya que el año en el que se sacó la canción no queremos que sea una de las características que nos ayuden a predecir la popularidad debido a que estamos buscando las características que nos ayuden a tener un alto valor de la variable respuesta independientemente del tiempo en el que salió la canción. Además, hemos decidido eliminar del conjunto de datos a todas las canciones con una popularidad 0 debido a que existen muchas canciones con esta popularidad y no sabemos si es debido a un fallo o¡en los datos o no y mantenerlo en nuestro conjunto de datos no nos va a ayudar a predecir valores altos de popularidad.
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+variablesnc = variablesnc[-15]
+datos = ncdata[,variablesnc]
+datos = datos[,-c(12)]
+numero <- datos[datos$popularity == 0, ]
+datos <- datos[datos$popularity != 0, ]
+```
+
+A continuación vamos a ver el número de filas que hemos eliminado por tener valor de popularidad 0:
+
+```{r}
+nrow(numero)
+```
+Como podemos ver casi medio millón de canciones tenían un valor 0 en la casilla de popolaridad por lo que cualquier modelo se podría ver influido a obtener valores bajos de popularidad ya que hay una gran cantidad de canciones con valor 0.
+
+
+Vamos a hacer una ejecución de código que nos va a permitir saber que variables están más o menos correlacionadas. El siguiente gráfico nos permite obtener una idea visual rápida de que variables se ven más o menos correlacionadas.
+
+```{r Correlaciones}
+M <- round(cor(x = datos, method = "pearson"), 3)
+corrplot(M, method = "circle")
+```
+
+Como podemos observar acousticness está relacionado negativamente con energy y loudness y estas dos últimas están correlacionadas positivamente, por lo que a mayor volumen tenga la canción(loudness) mayor será la energía de la misma. Además, simplificando lo dicho al principio, cuanto más acústica sea la canción menor volumen y menor energía tendrá. También, aunque el coeficiente de correlación es menor, podemos ver que a mayor danzabilidad tiene la canción mayor positividad transmite (valence).
+
+Como ya sabemos que variables están más correlacionadas, nos vamos a fijar en el valor que toma el coeficiente de correlación de estas correlaciones mediante el siguiente gráfico y de esta manera cuantificar dicha relación. 
+
+```{r}
+corrplot(M, method = "number")
+```
+
+Seguidamente, vamos a ver la distribución de cada variable:
+
+```{r}
+multi.hist(x = datos, dcol = c("blue", "red"), dlty = c("dotted", "solid"), main = colnames(datos))
+```
+
+Podemos ver normalidad en la danzabilidad y en el tempo de la canción, largas colas en instrumentalness, speechness, liveness, popularity y loudness. Aquí destacamos que popularity tiene más valores bajos y por tanto vemos la cola a la parte derecha. Además, valence tiene una distribución más o menos uniforme y energía tiene más valores altos que bajos, no obstante la distribución se acerca más a una uniforme.
+
+Pasamos a crear modelos de regresión. En primer lugar probaremos con todas las variables del conjunto de datos y nos haremos una idea de los resultados que esto nos proporciona. De todas maneras, como ya hemos hecho un Análisis de Componentes Principales ya sabemos que variables contribuyen más a explicar la variabilidad de los datos y también sabemos aquellas que están más correlacionadas entre ellas y crearemos un modelo sin el problema de multicolinealidad. 
+
+```{r MODELO 1}
+modelo <- lm(popularity ~ energy + tempo + danceability + instrumentalness+ acousticness + speechiness + liveness + valence, data = datos )
+summary(modelo)
+```
+
+Podemos observar que danceability, acousticness, instrumentalness y speechness tienen un valor absoluto del coeficiente obtenido más alto que el resto. De esto, podemos sacar que a mayor danzabilidad que tenga la canción mayor será su popularidad. Todas las variables resultan significativas pero somos conscientes de los posibles problemas de correlaciones entre las variables explicativas. Por último, cabe añadir que los datos tan sólo un 5'6% de la variabilidad en los datos por lo que concluimos que el modelo no es bueno.
+
+Pasaremos a hacer un análisis de los residuos por si encontramos problemas de heterocedasticidad o por si vemos que los residuos tienen una determinada forma que no es captada por el modelo. Escogemos las variables que por lo visto en PCA y en los resultados de este modelo generado, tal vez son más influyentes y nos pueden ayudar en mayor proporción a predecir la popularidad.  
+
+```{r}
+plot1 <- ggplot(data = datos, aes(energy, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot2 <- ggplot(data = datos, aes(acousticness, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot3 <- ggplot(data = datos, aes(danceability, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+plot4 <- ggplot(data = datos, aes(instrumentalness, modelo$residuals)) +
+    geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) +
+    theme_bw()
+grid.arrange(plot1, plot2, plot3, plot4)
+```
+
+Como podemos ver en los resultados los datos se distribuyen por todo el gráfico en todos los casos. Esto nos ayuda a saber que las diferencias entre los datos reales y predichos pueden variar mucho entre las diferentes canciones. Esto no nos ayuda mucho a encontrar un patrón ni a encontrar algún problema, pero si a saber que entre las canciones existe un gran variedad y que sacar información de los datos va a ser una tarea complicada, al menos realizando una regresión lineal múltiple. 
+
+A continuación, nos disponemos a crear 3 modelos más con las variables que consideramos que pueden ser las mejores. Además, después de ver los resultados, concluiremos si la regresión lineal múltiple es buena idea o no con este conjunto de datos.
+
+
+```{r MODELO 2-3-4}
+modelo2 <- lm(popularity ~ energy + danceability + acousticness , data = datos )
+summary(modelo2)
+modelo3 <- lm(popularity ~ energy + danceability + acousticness + duration_ms, data = datos )
+summary(modelo3)
+modelo4 <- lm(popularity ~ energy + danceability + duration_ms , data = datos )
+summary(modelo4)
+```
+
+Como podemos ver en los resultados el R-squared explica un porcentaje de variabilidad muy bajo, inferior al 5% en todos los casos. Con esto concluimos que para este conjunto de datos no es una buena idea utilizar la regresión lineal múltiple. Es por este motivo, que vamos a reducir nuestros datos a un subconjunto muy pequeño en el que los datos son más actuales y pensamos que, tal vez, hay una menor varianza.
+
+Ahora volveremos a realizar el proceso pero filtrando a datos más actuales, es decir, los datos de los últimos 5 años.
+
+```{r Datos actuales}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos <- datos[datos$popularity != 0, ]
+datos  = datos[datos$year <= 2021 & datos$year > 2016,]
+```
+
+Pasaremos a ver las correlaciones existentes entre las variables.
+
+```{r}
+M <- round(cor(x = datos, method = "pearson"), 3)
+corrplot(M, method = "circle")
+```
+
+Como podemos observar, sucede lo mismo que con el conjunto de todos los datos que usamos anteriormente. Asi que las conclusiones son las mismas. No on¡bstante, las comentaremos igual, y por tanto, podemos decir que acousticness está relacionado negativamente con energy y loudness y estas dos últimas están correlacionadas positivamente, por lo que a mayor volumen tenga la canción(loudness) mayor será la energía de la misma. Además, simplificando lo dicho al principio, cuanto más acústica sea la canción menor volumen y menor energía tendrá. También, aunque el coeficiente de correlación es menor, podemos ver que a mayor danzabilidad tiene la canción mayor positividad transmite (valence).
+
+Pasaremos a ver los coeficientes de corrrelación de manera numérica de estos pares mencionados en el siguiente gráfico.
+
+```{r}
+corrplot(M, method = "number")
+```
+
+Ahora vamos a crear los 4 modelos, igual que hemos hecho anteriormente y nos vamos a fijar si se consigue explicar un porcentaje de variavilidad más alto.
+
+```{r MODELO 5,6,7,8}
+modelo <- lm(popularity ~ energy + tempo + danceability + instrumentalness+ acousticness + speechiness + liveness + valence, data = datos )
+summary(modelo)
+modelo2 <- lm(popularity ~ energy + danceability + acousticness , data = datos )
+summary(modelo2)
+modelo3 <- lm(popularity ~ energy + danceability + acousticness + duration_ms, data = datos )
+summary(modelo3)
+modelo4 <- lm(popularity ~ energy + danceability + duration_ms , data = datos )
+summary(modelo4)
+```
+
+De los resultados obtenidos, llegamos a la conlusión que la máxima variabilidad explicada obtenido por uno de los modelos es de 6'8% por lo que finalmente, podemos decir que ajustar un modelo de regresión a estos datos no es muy buena idea. Esto se debe a que los datos son muy dispersos y que no se encuentra un patrón claro que ayude a predecir la popularidad. 
+
+Además de esto, también hemos estado probando otros modelos con datos sólo de 2020 y posteriormente con datos de 2020 filtrados por una popularidad mayor a 70. No obstante, en ambos casos los resultados obtenidos son los mismos, por lo que nos ahorraremos añadir este código.
+
+```{r, include=FALSE}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+# ANÁLISIS DISCRIMINANTE
+
+Vamos a proseguir con nuestra idea de predecir la popularidad, esta vez cambiando de técnica y utilizando un Análisis Discriminante. Como predecir exactamente un valor ha resultado ser complicado hemos decidido hacer un modelo de clasificación, de manera que vamos a recodificar la columna popularidad en una nueva columna con tres posibles valores, es decir, datos entre 0-30, 30-70 y >70. Por el mismo motivo que en el anterior análisis eliminaremos los datos con popularidad igual a 0 de nuestro conjunto de datos.
+
+
+```{r Análisis Discriminante}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 70] <- ">70"
+datos$recod[datos$popularity <= 70 & datos$popularity > 30] <- "30-70"
+datos$recod[datos$popularity <= 30 & datos$popularity >= 0] <- "0-30"
+datos <- datos[datos$popularity != 0, ]
+```
+
+Además utilizaremos una validación cruzada o cross-validation, dividiendo los datos en dos conjuntos, el de entrenamiento para crear el modelo y datos test para probarlo. Además, al igual que haremos con todos los modelos en los que utilicemos Análisis dDiscriminante, haremos 10 carpetas de datos y repetiremos esto 30 veces para asegurarnos de que los resultados que obtenemos son reales y no causa del azar.
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+# trainFilas contiene los números de las filas que irán a Train
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Como podemos ver, medio millón de filas comprenden entre 0 y 30 sus valores de popularidad, 110 mil filas entre 30 y 70 y unas 2.500 filas con popularidad mayor que 70. Esto nos puede dar problemas, ya que los datos están desbalanceados. No obstante, probaremos el modelo tanto en el conjunto de entrenamiento como en el de test.
+
+```{r MODELO 1(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+#trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ ., data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Accuracy = 0.81; Kappa cercano a 0. Probabilidad a priori de obtener una popularidad entre 0 y 30 es de 0.81, lo que indica que hay muchos más datos en este intervalo que en el resto. El índice de Kappa se utiliza para cuando hay más de dos clases por lo que es un buen medidor del error de predicción. El índice de  Kappa representa la proporción de acuerdos observados más allá del azar respecto del máximo acuerdo posible más allá del azar. En este caso el grado de acuerdo es insignificante. No obstante, la proporción de datos clasificados correctamente es muy elevada, esto es debido a que el modelo tiende a predecir practicamente todos los datos como en el intervalo 0-30 por lo que el modelo no tiene capacidad para predecir en otros intervalos y esto no nos interesa ya que nuestro objetivo es encontrar características que nos lleven a predecir datos altos de popularidad.
+
+Valoraremos los resultados mediante una matriz de confusión y veremos los datos que se han clasificado correctamente y la cantidad de los que no lo han hecho.
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+
+En estos resultados vemos lo comentado anteriormente, es decir, que el modelo tiende a predecir los datos con baja popularidad.
+
+A continuación, probamos el modelo en los datos test:
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+#testDatosESC[,-12] = scale(testDatos[,-12], center = colMeans(trainDatos[,-12]), scale = apply(trainDatos[,-12], 2, sd))
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+
+Con la curva ROC veremos el area debajo de la curva que nos permitirá hacer una  representación de la proporción de verdaderos positivos  frente a la proporción de falsos positivos.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">70")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">70"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+El valor de AUC nos permite afirmar que el test es bueno, no obstante lo descartaremos por todo lo dicho anteriormente.
+
+Debido a que hemos visto que los resultados se inclinan por predecir la mayoría de las veces una popularidad baja a causa del desbalanceo en los datos, probaremos recodificar la nueva columna creada de una manera que los datos estén balanceados. Por tanto, vamos a crear dos grupos, uno entre 0-10 de popularidad y otro con los datos restantes. El objetivo será hacer otro análisis discriminante si se predice un valor mayor de 10 y volver a hacer otra partición con este subconjunto de datos, por ejmplo de 10-30 y mayores de 30. No obstante, primero nos centraremos en ver si obtenemos unos resultados positivos.
+
+
+```{r, include=FALSE}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 10] <- ">10"
+datos$recod[datos$popularity <= 10 & datos$popularity >= 0] <- "0-10"
+datos <- datos[datos$popularity != 0, ]
+```
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+# trainFilas contiene los números de las filas que irán a Train
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Ahora si que vemos que los datos están balanceados, por lo que vamos a pasar a la creación del modelo y a su posterior valoración.
+
+```{r MODELO 2(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+#trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ ., data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Accuracy 0'60; Kappa = 0'21.
+
+
+Como podemos ver, las conclusiones cambian respecto a las del modelo anterior. Si que es verdad que la proporción de datos clasificados correctamente es menor, pero a un así clasifica el 60% correctamente y el índice de kappa muestra un grado de acuerdo mediano. No obstante, lo más importante de este modelo es que parece ser  predice muchos más datos con popularidad elevada.
+Esto lo veremos en la sensibilidad.
+
+Vamos a interpretar a continuación la matriz de confusión de los datos de entrenamiento:
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+
+Destacamos que el 60% de los datos son clasificados correctamente y sobretodo que la sensibilidad es de 0'56 por lo que vemos que nos ayuda predecir  mucha más cantidad de datos con popularidad elevada.
+
+Pasaremos a valorar los resultados del modelo en el conjunto de datos test.
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+#testDatosESC[,-12] = scale(testDatos[,-12], center = colMeans(trainDatos[,-12]), scale = apply(trainDatos[,-12], 2, sd))
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+
+De la misma manera que en los datos de entrenamiento, podemos destacar que el 60% de los datos son clasificados correctamente.
+
+A continuación, veremos las curva ROC y al area debajo de la curva que mide qué tan bien se clasifican las predicciones.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">10")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">10"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+
+
+AUC = 0.63 -- modelo regular (0'60-0'75).
+
+
+A continuación, probaremos a crear un modelo creando una nueva variable explicada con tres valores balanceados por si los resultados obtenidos fueran mejores. En caso de obtener peores resultados que con el modelo anterior, seguiremos con la idea de hacer un Análisis Discriminante dentro del Análisis Discriminante, es decir, coger el conjunto de datos con popularidad mayor de 10 y volver a partir los datos en dos grupos.
+
+```{r, include=FALSE}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 20] <- ">20"
+datos$recod[datos$popularity <= 20 & datos$popularity > 5] <- "5-20"
+datos$recod[datos$popularity <= 5 & datos$popularity >= 0] <- "0-5"
+datos <- datos[datos$popularity != 0, ]
+```
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+# trainFilas contiene los números de las filas que irán a Train
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Como vemos los datos están balanceados en los tres grupos. 
+
+```{r MODELO 3(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ ., data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Podemos destacar que la accuracy del modelo es de 0'43 por lo que es menor que en el anterior modelo. 
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+Observamos que tanto Kappa como la proporción de datos clasificados correctamente es menor por lo que descartamos este modelo respecto del anterior, además de demostrar que tiene una menor sensibilidad.
+
+Vemos que ocurre con los datos que nos hemos guardado para probar el modelo.
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+#testDatosESC[,-12] = scale(testDatos[,-12], center = colMeans(trainDatos[,-12]), scale = apply(trainDatos[,-12], 2, sd))
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+Obtenemos una accuracy de 0'43 por lo que vemos que el modelo mencionado anteriormente dividido en dos grupos balanceados clasifica más datos correctamente.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">20")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">20"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+
+Por tanto, vamos a guardarnos el conjunto de datos filtrados por popularidad mayor que 10 y crearemos una nueva columna con dos clases, es decir, datos con popularidad entre 10-30 y >30.
+
+```{r, include=FALSE}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 30] <- ">30"
+datos$recod[datos$popularity <= 30 & datos$popularity > 10] <- "10-30"
+datos$recod[datos$popularity <= 10 & datos$popularity >= 0] <- "0-10"
+datos <- datos[datos$popularity > 10, ]
+```
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+#trainFilas contiene los números de las filas que irán a Train
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Como podemos ver los datos se encuentran más o menos balanceados, así que procedemos a generar el modelo.
+
+```{r MODELO 4(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ ., data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Vemos que el valor de Accuracy es bueno también en este subconjunto y en este Análisis Discriminante. 
+
+Ahora pasamos a valorar la matriz de confusión de los datos de entrenamiento. 
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+
+No obstante en este caso la sensibilidad es baja, concretamente 0'10, por lo que este segundo modelo no tiene tanta potencia como el anterior para predecir datos con popularidad elevada. De todas formas, nos estamos dando cuenta que este tipo de método supervisado es mucho mejor en este conjunto de datos que un modelo de regresión y que tenemos un primer modelo ya que nos ayuda a predecir valores con popularidad mayor a 10 con un nivel de sensibilidad relativamente alto.
+
+Seguidamente, valoraremos los resultados del modelo para los datos test.
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+testDatosESC[,-12] = scale(testDatos[,-12], center = colMeans(trainDatos[,-12]), 
+                     scale = apply(trainDatos[,-12], 2, sd))
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+
+A continuación, veremos las curva ROC y al area debajo de la curva que mide qué tan bien se clasifican las predicciones.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">30")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">30"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+
+En este proceso hemos creado modelos con todas las variables que tenemos en los datos como variables explicativas. No obstante, como sabemos, hay varias variables que están correlacionadas entre ellas, pudiendo generar problemas de multicolinealidad y además después de haber realizado PCA sabemos que hay varias variables que contribuyen a explicar una mayor variabilidad de los datos. Por tanto, crearemos un modelo juntando estas características y compararemos con el modelo creado anteriormente. Además, esto también lo hacemos porque aumentar la complejidad del modelo añadiendo muchas variables puede hacer que sobreajuste el modelo a los datos y que el modelo pierda capacidad predictora.
+
+
+```{r, include=FALSE}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 10] <- ">10"
+datos$recod[datos$popularity <= 10 & datos$popularity >= 0] <- "0-10"
+datos <- datos[datos$popularity != 0, ]
+```
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+# trainFilas contiene los números de las filas que irán a Train
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Escogemos las variables energy, danceability, speechiness y instrumentalness para añadir al modelo ya que no están correlacionadas entre ellas y además son las que más variablidad de los datos explican. También pensamos que  4 como número de variables es un buen número ya que no genera un modelo complejo y así evitamos perder capacidad predictora.
+
+```{r MODELO 5(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+#trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ energy + danceability + speechiness + instrumentalness, data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Accuracy = 0'57 ; Kappa = 0'15
+
+Vemos que tanto Accuracy como Kappa son un poco menores que el modelo creado con todas las variables y esto puede ser debido a un sobreajuste de los datos, ya que tampoco varía mucho. No obstante, nos fijaremos en la potencia que tiene para predecir datos con popularidad alta mediante la sensibilidad y decidiremos que modelo nos puede ayudar más a cumplir nuestro objetivo.
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+
+Como podemos ver en este resultado, la sensibilidad nos indica que este primer modelo con escasas variables sigue teniendo potencia para predecir valores mayores a 10 de popularidad. No obstante, validaremos esta afirmación con los datos que nos hemos guardado a modo test para probar el modelo.
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+#testDatosESC[,-12] = scale(testDatos[,-12], center = colMeans(trainDatos[,-12]), scale = apply(trainDatos[,-12], 2, sd))
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+
+Probando el modelo con el conjunto de datos test. Podemos destacar que el 57% de los datos son clasificados correctamente y que la sensibilidad toma un valor también alto de 0'57 por lo que este modelo es tan útil como el generado con todas las variables, y en este caso con menor complejidad. Además nos ayuda en nuestro objetivo principal.
+
+A continuación, veremos las curva ROC y al area debajo de la curva que mide qué tan bien se clasifican las predicciones.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">10")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">10"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+AUC = 0'602 --- test regular (0'60-0'75)
+
+
+Ahora vamos a proceder a hacer la segunda parte, es decir, vamos a hacer un Análisis Discriminante con el conjunto de datos mayores que 10 de popularidad.
+
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+datos = ncdata[,variablesnc]
+datos$recod[datos$popularity > 30] <- ">30"
+datos$recod[datos$popularity <= 30 & datos$popularity > 10] <- "10-30"
+datos$recod[datos$popularity <= 10 & datos$popularity >= 0] <- "0-10"
+datos <- datos[datos$popularity > 10, ]
+```
+
+Creamos nuestros datos de entrenamiento y test:
+
+```{r}
+set.seed(100)
+trainFilas = createDataPartition(datos$recod, p=0.8, list=FALSE)
+trainDatos = datos[trainFilas,] 
+testDatos = datos[-trainFilas,]
+num = table(trainDatos$recod)
+num
+perc = 100*num/sum(num)
+myTrainControl = trainControl(method = "repeatedcv",  # k-fold
+                              number = 10,  # num folds
+                              repeats = 30)
+```
+
+Las clases están balanceadas por lo que evitamos tener este problema en el modelo. Pasamos a entrenar el modelo con las pocas variables que hemos escogido.
+
+```{r MODELO 6(2)}
+set.seed(100)
+trainDatosESC = trainDatos
+trainDatos = trainDatos[, -8]
+trainDatosESC = trainDatosESC[, -8]
+#trainDatosESC[,-12] = scale(trainDatos[,-12], center = TRUE, scale =  TRUE)
+modeloTR = train(recod ~ energy + danceability + speechiness + instrumentalness, data = trainDatosESC, method='lda', 
+                 trControl = myTrainControl)  # preProcess = "scale"
+modeloTR
+modeloTR$method
+modeloTR$finalModel
+modeloTR$results
+```
+
+Accuracy = 0'61 ; Kappa 0'02.
+
+Como podemos ver los resultados en este segundo caso son muy parecidos al segundo caso con el modelo que contiene todas las variables.
+
+```{r}
+ajusteTR = predict(modeloTR, type = "raw")
+caret::confusionMatrix(ajusteTR, factor(trainDatosESC$recod))
+```
+
+Vemos las mismas conclusiones en la matriz de conclusión. Así que pasamos a probar el modelo en los datos test. No obstante, por la experiencia adquirida los resultados no deberían variar mucho o practicamente nada con los datos de entrenamiento. Esto se ha podido deber a que ambos conjuntos son muy parecidos  y se obtienen resultados muy similares. No obstante, creemos que cualquier dato nuevo introducido será similar a todos los que estamos utilizando para entrenar y testar el modelo.
+
+```{r}
+testDatosESC = testDatos
+testDatos = testDatos[, -8]
+testDatosESC = testDatosESC[, -8]
+ajusteTest = predict(modeloTR, testDatosESC, type = "raw") 
+caret::confusionMatrix(ajusteTest, factor(testDatos$recod))
+```
+
+Podemos destacar que el 0'61% de los datos son clasificados correctamente. No obstante kappa es 0'02, es decir prácticamente 0. La sensubilidad es baja al igual que pasa cuando volvemos a hacer el segundo modelo con todas las variables. Esto nos indica que es muy dificil predecir datos con mucha popularidad.
+
+A continuación, veremos las curva ROC y al area debajo de la curva que mide qué tan bien se clasifican las predicciones.
+
+```{r}
+library(pROC)
+Y = 1*(testDatos$recod == ">30")
+ajusteTestProb = predict(modeloTR, testDatosESC, type = "prob") 
+roc(Y ~ ajusteTestProb[,">30"], plot = TRUE, print.auc = TRUE, col = "red3") 
+```
+
+AUC = 0'60 -- test Regular (0'6-0'75)
+
+
+# CONCLUSIÓN
+
+La conclusión más importante que logramos extraer de este proceso es que los datos se encuentran muy dispersos y es muy dificil encontrar un modelo que nos ayude a predecir la popularidad, siendo todavía más complicado llegar a predecir valores muy altos de esta variable.
+
+No obstante, extraemos información de nuestro conjunto de datos y de las variables que se encuentran más relacionadas entre ellas como por ejemplo hemos explicado en los gráficos generados con corrplot, donde vemos que existe una correlación positiva entre energy y loudness y negativa entre acousticness y las dos mencionadas anteriormente por separado. También, aunque el coeficiente de correlación es menor, podemos ver que a mayor danzabilidad tiene la canción mayor positividad transmite (valence).
+
+Por último, nos queda claro que sería mejor utilizar un modelo de clasificación recodificando datos y creando clases balanceadas, que generando un modelo de regresión. No obstante, del modelo de regresión nos quedamos con que en todos los modelos se obtiene que a mayor danzabilidad tiene la canción mayor es su popularidad, por lo que esta variable nos ayuda a tener valores altos de popularidad, y tal vez, convendría componer canciones que se puedan bailar si se quiere tener éxito en el mercado.
+
+Si nos tuvieramos que quedar con un modelo sería con el modelo de 4 variables que tiene una menor complejidad y se obtienen prácticamente unos resultados idénticos al modelo creado con todas las variables. Sabremos que en el primer Análisis Discriminante que hagamos tendremos una mayor potencia para predecir datos con popularidad mayor que 10, pero que en el segundo modelo que generamos la sensibilidad se reduce considerablemente y no nos ayuda a predecir datos con popularidad mayor que 30 de manera correcta. Así pues proponemos estos modelos, teniendo en cuenta todo lo mencionado anteriormente. Estas conclusiones son realmente significativas y validadas debido a que hemos utilizado cross-validation creando 10 carpetas y repitiendo el proceso 30 veces, por lo que evitamos cualquier error debido a la aleatoriedad y mostramos conclusiones objetivas y validadas correctamente.
+
