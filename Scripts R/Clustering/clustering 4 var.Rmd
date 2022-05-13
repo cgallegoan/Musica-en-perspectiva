@@ -1,0 +1,143 @@
+---
+title: "Clustering 4 Var"
+author: "Héctor Martínez Cabanes"
+date: "5/15/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(cluster)
+library(FactoMineR)
+library(factoextra)
+library(NbClust)
+library(clValid)
+```
+
+## Carga y filtrado de los datos
+
+Cargamos tanto ncdata como desc_data para poder trabajar fácilmente con las variables que queramos:
+
+```{r}
+load('ncdata.RData')
+load('desc_data.RData')
+```
+
+Ahora filtramos los datos, en este ejemplo vamos a seleccionar las canciones que:
+
+  - Duran entre 30 segundos y 5 minutos
+  - Tienen una popularidad mayor que 70
+
+Además, solo vamos a seleccionar algunas variables, ya que como algunas están muy relacionadas pueden dificultar el análisis clustering, por tanto este análisis lo vamos a realizar teniendo en cuenta las variables:
+
+  - Acousticness
+  -Instrumentalness
+  -Speechiness
+  -Loudness
+
+Aplicando este filtrado, nuestro conjunto de datos sobre el que realizar el clustering sería el siguiente:
+
+```{r}
+songs = ncdata[ncdata$duration_ms > 18000,]
+songs = songs[songs$duration_ms < 300000,]
+songs = songs[songs$popularity > 70,]
+songs = songs[,c('acousticness','instrumentalness','speechiness','loudness')]
+songs=scale(songs)
+
+aux_data = ncdata[ncdata$duration_ms > 18000,]
+aux_data = aux_data[aux_data$duration_ms < 300000,]
+aux_data = aux_data[aux_data$popularity > 70,]
+```
+
+Como podemos ver, se nos queda un data set de alrededor de 3000 canciones y las 4 variables que hemos indicado en el párrafo anterior. Ahora ya podemos pasar a realizar el análisis clustering con estos datos.
+
+## Análisis clustering - Elección de clusters
+
+En esta sección vamos a ver en cuántos clusters dividir nuestras canciones y qué método utilizar para ello. En primer lugar vamos a calcular la matriz de distancias y graficar los coeficientes de Silhouette y la suma de cuadrados intracluster para ver cual es el número óptimo. El coeficiente de Silhouette nos permite cuantificar cómo de buena es la asignación que se ha hecho de los elementos en los clusters, comparando la similitud de cada elemento con el resto de su cluster frente a los de otros clusters. Este número oscila entre -1 y 1, siendo 1 undicativo de una asignación correcta. Luego cuanto mayor sea el valor mejor asignación se habrá realizado en promedio.
+
+
+Por otro lado, con el gráfico de la Suma de Cuadrados intra-cluster queremos un valor lo menor posible, siempre evitando aumentar innecesariamente el número de cluster cuando la variación es mínima. Luego, en este caso buscamos maximizar la homogeneidad intra-cluster, es decir, obtener la menor varianza posible dentro de cada cluster.
+```{r}
+midist = get_dist(songs, method = "euclidean")
+distancias=as.data.frame(as.matrix(midist),row.names=aux_data$id)
+colnames(distancias)=aux_data$id
+fviz_nbclust(x = songs, FUNcluster = kmeans, method = "silhouette", 
+             k.max = 15, verbose = FALSE) +
+  labs(title = "Num. clusters")
+
+fviz_nbclust(x = songs, FUNcluster = kmeans, method = "wss", 
+             k.max = 15, verbose = FALSE) +
+  labs(title = "Num. clusters")
+
+```
+
+Observando ambos gráficos, llegamos a la misma conclusión, el número óptimo de clusters para nuestro conjunto de datos es 4. Por tanto, nuestro análisis separará en 4 grandes grupos nuestras canciones en base a sus atributos musicales.
+
+Vamos a utilizar el método k-medias, ya que es el método que más se suele utilizar en los casos en los que ya sabemos el número de clústers en los que separar los datos.
+
+## 4 Clusters
+
+```{r}
+set.seed(12710)
+clustering_4 <- kmeans(songs, centers = 4, nstart = 50, iter.max = 50)
+table(clustering_4$cluster)
+fviz_cluster(object = list(data=songs, cluster=clustering_4$cluster), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = TRUE,
+             labelsize = 8)  +
+  labs(title = "K-MEDIAS + Proyeccion PCA",
+       subtitle = "Dist euclidea, K=4") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+plot(silhouette(clustering_4$cluster, midist), col=rainbow(4), border=NA, main = "K-medias")
+```
+
+Ahora vamos a ver la formación de los clusters, en el ejemplo de k=4:
+
+```{r}
+c1 = aux_data[which(clustering_4$cluster == 1),]
+c2 = aux_data[which(clustering_4$cluster == 2),]
+c3 = aux_data[which(clustering_4$cluster == 3),]
+c4 = aux_data[which(clustering_4$cluster == 4),]
+c1
+c2
+c3
+c4
+```
+
+Y también podemos ver los centroides de cada cluster:
+
+```{r}
+clustering_4$centers
+```
+
+Viendo la tabla de los centroides de los grupos, podemos hacer una descripción de las canciones que están dentro de cada grupo:
+
+  - Grupo 1: este grupo destaca por su alto valor de 'instrumentalness', es decir, son pistas de audio con poco contenido vocal, con bases musicales muy marcadas. 
+  
+  - Grupo 2: en este grupo las 4 características tienen valores cercanos a 0, no hay ninguna que sobre salga por encima del resto. En este grupo agrupamos las canciones que tienen tanto una base instrumental como vocal.
+  
+  -Grupo 3: este grupo representa todo lo contrario al grupo 1. En este caso, agrupamos las pistas con fuerte contenido vocal. Según la descripción de la API de Spotify, 'cuanto más similar a un discurso sea la canción, más alto será su valor en esta variable'. Es por esto que encontramos aquí grandes éxitos de rap y trap estadounidense o latino.
+  
+  -Grupo 4: en este grupo están representadas las pistas con alto contenido acústico. Además, estas pistas tienden a tener valores bajos en 'loudness', lo que implica que en general son canciones poco ruidosas o estridentes.
+
+
+```{r}
+#pedir id de cancion
+
+recomendar_cancion= function(cancion){
+  
+  clust=clustering_4$cluster[which(aux_data$id==cancion)]
+  similares=distancias[cancion,which(clustering_4$cluster == clust)]
+  similares=similares[,which(similares[1,]>0)]
+  recomendada=as.matrix(colnames(similares))[which.min(similares),1]
+  return (aux_data[which(aux_data$id==recomendada),])
+  
+}
+```
+
+
+```{r}
+recomendar_cancion('0VgkVdmE4gld66l8iyGjgx')
+```
+

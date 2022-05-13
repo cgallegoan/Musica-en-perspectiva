@@ -1,0 +1,218 @@
+---
+title: "Clustering con PAM"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(cluster)
+library(FactoMineR)
+library(factoextra)
+library(NbClust)
+library(clValid)
+```
+
+Vamos a realizar clustering sobre los datos 'nc_data' con el método de clustering K-medoides o PAM.
+
+```{r}
+load('C:/Users/belan/Desktop/UNIVERSIDAD/2CD1/PROYECTO II/DATOS/ncdata.RData')
+load('C:/Users/belan/Desktop/UNIVERSIDAD/2CD1/PROYECTO II/DATOS/desc_data.RData')
+```
+
+```{r}
+ncdata_aux = ncdata
+ncdata_aux = ncdata_aux[ncdata_aux$duration_ms > 18000,]
+ncdata_aux = ncdata_aux[ncdata_aux$duration_ms < 300000,]
+ncdata_aux = ncdata_aux[ncdata_aux$popularity > 70,]
+```
+
+```{r}
+ncdata2= ncdata_aux[,desc_data$type=='numerical']
+View(ncdata2)
+
+ncdata2 = ncdata2[,-c(3,8,10,12)]
+ncdata2 = scale(ncdata2, center = TRUE, scale = TRUE)
+
+```
+
+```{r}
+fviz_nbclust(x=ncdata2, FUNcluster = pam, method = 'silhouette', k.max = 10, verbose = FALSE) +
+  labs(title = 'Número óptimo de cluster')
+
+```
+
+Como Podemos observar en el gráfico anterior, el número óptimo de cluster son 2. Sin embargo, como este número de cluster es trivial, vamos a realizar un gráfico de la Suma de Cuadrados:
+```{r}
+fviz_nbclust(x = ncdata2, FUNcluster = pam, method = "wss", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+```
+Ahora podemos afirmar que realizar 2 clusters tendría gran error. Teniendo en cuenta la orientación del codo (elbow), vamos a elegir 6 cluster que tienen un gran coeficiente de Silhouette también.
+
+--> Resultado: Los cluster se solapan unos encima de otros, así que vamos a rectificar y realizaremos 2 clusters.
+```{r}
+cluster1 <- pam(ncdata2, k = 2)
+table(cluster1$clustering)
+
+fviz_cluster(object = list(data=ncdata2, cluster=cluster1$clustering), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8, axes = (1:2))  +
+  labs(title = "K-MEDOIDES + Proyeccion PCA",
+       subtitle = "Dist euclidea, K=2") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+#View(desc_data)
+#canciones = ncdata[which(ncdata$popularity > 70),]
+
+kable(ncdata_aux[which(cluster1$clustering == 1),c('artists','name')])
+
+```
+Con 2 clusters, vemos que hay unas pocas observaciones que se solapan pero se distinguen las dos nubes de puntos.
+
+Como dentro de cada cluster tenemos una enorme cantidad de individuos, vamos a realizar otro clustering sobre el grupo 1, el cluster con más observaciones.
+````{r}
+midist <- get_dist(ncdata2, stand = FALSE, method = "euclidean")
+plot(silhouette(cluster1$clustering, midist), col=rainbow(2), border=NA, main = "K-MEDOIDES")
+
+```
+
+```{r}
+misclust = factor(cluster1$cluster)
+miPCA = PCA(ncdata2, scale.unit = FALSE, graph = FALSE)
+fviz_eig(miPCA)
+fviz_pca_ind(miPCA, geom = "point", habillage = misclust, addEllipses = FALSE, 
+             palette = rainbow(2))
+fviz_pca_var(miPCA)
+fviz_pca_ind(miPCA, geom = "point", habillage = misclust, addEllipses = FALSE, axes = 3:4,
+             palette = rainbow(2))
+fviz_pca_var(miPCA, axes = 3:4)
+
+fviz_pca_biplot(miPCA, axes = c(1,2), col.var = "contrib", label = "var",
+                repel = TRUE)
+```
+
+```{r}
+ncdata_aux3 = ncdata_aux[which(cluster1$clustering == 1),]
+ncdata3 = ncdata2[which(cluster1$clustering == 1),]
+View(ncdata3)
+ncdata3 = scale(ncdata3, center = TRUE, scale = TRUE)
+
+```
+Vamos a realizar otra vez los gráficos para comprobar el nº óptimo de cluster y decidiremos.
+```{r}
+fviz_nbclust(x=ncdata3, FUNcluster = kmeans, method = 'silhouette', k.max = 10, verbose = FALSE) +
+  labs(title = 'Número óptimo de cluster')
+
+fviz_nbclust(x = ncdata3, FUNcluster = kmeans, method = "wss", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+```
+A diferencia del anterior estudio, en este caso 7 clusters es la mejor decisión porque tiene un coeficiente de Silhouette muy alto a diferencia de los demás y su Suma de Cuadrados es aceptable.
+
+Esta vez vamos a hacer uso tanto de PAM como de kmeans para observar diferencias:
+
+```{r}
+cluster_data3 <- kmeans(ncdata3, centers = 7, nstart = 20)
+table(cluster_data3$clustering)
+
+fviz_cluster(object = list(data=ncdata3, cluster=cluster_data3$cluster), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8, axes(7:8))  +
+  labs(title = "K-MEDIAS",
+       subtitle = "Dist euclidea, K=7") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+########################
+########################
+
+clusterpam_data3 <- pam(ncdata3, k = 7)
+table(cluster_data3$clustering)
+
+fviz_cluster(object = list(data=ncdata3, cluster=clusterpam_data3$clustering), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8,axes(1:2))  +
+  labs(title = "K-MEDOIDES",
+       subtitle = "Dist euclidea, K=7") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+
+cluster_data3
+kable(ncdata_aux3[which(cluster_data3$cluster == 5),c('id','artists','name')])
+
+```
+
+
+```{r}
+miPCA2 = PCA(ncdata3, scale.unit = FALSE, graph = FALSE)
+misclust2 = factor(cluster_data3$cluster)
+fviz_eig(miPCA2)
+fviz_pca_ind(miPCA2, geom = "point", habillage = misclust2, addEllipses = FALSE, 
+             palette = rainbow(10))
+fviz_pca_var(miPCA2)
+fviz_pca_ind(miPCA2, geom = "point", habillage = misclust2, addEllipses = FALSE, axes = 3:4,
+             palette = rainbow(10))
+fviz_pca_var(miPCA2, axes = 3:4)
+
+fviz_pca_biplot(miPCA2, axes = c(1,2), col.var = "contrib", label = "var",
+                repel = TRUE)
+```
+
+
+
+
+```{r}
+ncdata_aux4 = ncdata_aux3[which(cluster_data3$cluster == 6),]
+ncdata4 = ncdata3[which(cluster_data3$cluster == 6),]
+View(ncdata4)
+ncdata4 = scale(ncdata4, center = TRUE, scale = TRUE)
+
+```
+Vamos a realizar otra vez los gráficos para comprobar el nº óptimo de cluster y decidiremos.
+```{r}
+fviz_nbclust(x=ncdata4, FUNcluster = kmeans, method = 'silhouette', k.max = 10, verbose = FALSE) +
+  labs(title = 'Número óptimo de cluster')
+
+fviz_nbclust(x = ncdata4, FUNcluster = kmeans, method = "wss", 
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+
+
+
+```
+
+
+
+```{r}
+cluster_data4 <- kmeans(ncdata4, centers = 7, nstart = 20)
+table(cluster_data4$clustering)
+
+fviz_cluster(object = list(data=ncdata4, cluster=cluster_data4$cluster), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8,axes= (3:4))  +
+  labs(title = "K-MEDIAS",
+       subtitle = "Dist euclidea, K=7") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+########################
+########################
+
+clusterpam_data4 <- pam(ncdata4, k = 7)
+table(clusterpam_data4$clustering)
+
+fviz_cluster(object = list(data=ncdata4, cluster=clusterpam_data4$clustering), stand = FALSE,
+             ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,
+             labelsize = 8)  +
+  labs(title = "K-MEDOIDES",
+       subtitle = "Dist euclidea, K=7") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+
+cluster_data4
+kable(ncdata_aux4[which(cluster_data4$cluster == 5),c('id','artists','name')])
+
+```

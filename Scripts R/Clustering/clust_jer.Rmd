@@ -1,0 +1,94 @@
+---
+title: "Clustering Jerárquico - Proyecto II"
+author: "Héctor Martínez Cabanes"
+date: "5/2/2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(cluster)
+library(FactoMineR)
+library(factoextra)
+library(NbClust)
+library(clValid)
+load('ncdata.RData')
+load('desc_data.RData')
+```
+
+## Clustering Jerárquico - Método 'Complete'
+
+En primer lugar vamos a seleccionar las variables que vamos a incluir en el clustering y calcular su matriz de distancias, además vamos a centrar y escalar los datos ya que hay variables que están expresadas en unidades diferentes:
+
+```{r}
+datos_clust=ncdata[which(ncdata$popularity>70),desc_data$variable[which(desc_data$type=='numerical')]]
+datos_clust=scale(datos_clust)
+dist=get_dist(datos_clust[,-c(8)], method='euclidean')
+```
+
+En segundo lugar vamos a observar la tendencia de agrupamiento de los datos para decidir cuantos clusters crear:
+
+```{r}
+fviz_dist(dist, 
+          gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+
+También vamos a calcular el estadístico de Hopkins para ver la tendencia de agrupación en nuestros datos:
+
+```{r}
+set.seed(100)
+myN = c(500)
+myhopkins = NULL
+myseed = sample(1:1000, 1)
+for (i in myN) {
+  for (j in myseed) {
+    tmp = get_clust_tendency(data = datos_clust[,-c(8)], n = i, graph = FALSE, seed = j)
+    myhopkins = c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+
+Finalmente, vamos a calcular algunos gráficos para decidir el número de clusters en que vamos a agrupar las canciones:
+
+```{r}
+res.nbclust <- NbClust(data = datos_clust[,-c(8)], diss = dist, distance = NULL, 
+                        min.nc = 2, max.nc = 10, 
+                        method = "complete", index ="silhouette") 
+plot(names(res.nbclust$All.index), res.nbclust$All.index, type = "b", main = "Complete",
+     xlab = "Num. clusters", ylab = "Coeficiente Silhouette", col = 4)
+fviz_nbclust(x = datos_clust[,-c(8)], FUNcluster = hcut,diss=dist, method = "wss", hc_method = "complete",
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+```
+Según lo observado en los gráficos, y teniendo en cuenta la naturaleza de nuestros datos, haremos un clustering con 6 clusters diferentes, ya que con 4, 5 y 6 grupos el coeficiente de silhouette y la suma de cuadrados es muy similar:
+
+```{r}
+clust <- hclust(dist, method="complete")
+grupos = cutree(clust, k = 6)
+fviz_dend(clust, k = 4,cex = 0.5,rect = TRUE, show_labels = FALSE)
+```
+
+Después de realizar el dendrograma, también podemos motrar resúmenes de como han quedado confeccionado los grupos al aplicar este método:
+
+```{r}
+table(grupos)
+```
+
+Como vemos que en el grupo 3 solo hay 4 canciones, vamos a ver cuales son:
+
+```{r}
+canciones_clust=ncdata[which(ncdata$popularity>70),]
+canciones_clust$name[which(grupos==3)]
+```
+
+En el grupo 1 también aparecen muy pocas canciones:
+
+```{r}
+canciones_clust[which(grupos==2),c('name','artists')]
+```
+

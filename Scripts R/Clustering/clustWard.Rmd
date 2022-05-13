@@ -1,0 +1,176 @@
+---
+title: "Ward"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Hemos realizado un análisis clustering con varios métodos jerárquicos y no jerárquicos, de tal manera que valoraremos cual es el mejor de todos y, por tanto, aquel que nos sirve mejor para agrupar nuestro conjunto de datos. En el presente documento se tratará del método jerárquico Ward que forma los clusters de forma que se maximice la homogeneidad intra-clusters, es decir, que se produzca un menor incremento en la Suma de Cuadrados (varianza) intra-cluster
+
+```{r, include=FALSE}
+#Cargamos las librerías que serán necesarias. 
+library(FactoMineR)
+library(factoextra)
+library(dbplyr)
+library(knitr)
+library(dplyr)
+library(cluster)
+library(NbClust)
+library(clValid)
+```
+
+Vamos a cargar los datos que nos harán falta para realizar un análisis clustering.
+
+```{r}
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/ncdata.RData")
+load("C:/Users/losaa/OneDrive/Escritorio/Estudios/Proyecto II/desc_data2.RData")
+```
+
+Prepararemos los datos de tal manera que vamos a quedarnos con solo las variables númericas con valor de popularidad mayor que 70 y además eliminaremos las variables que nos muestran la duración de la canción, la popularidad y el año en el que salió, ya que estas no nos son de gran ayuda para encontrar una agrupación en los datos.
+
+```{r}
+variablesnc = desc_data$variable[desc_data$type == 'numerical']
+variablesnc = variablesnc[-15] # Quitamos la columna classical
+hola = ncdata[ncdata$popularity > 70,]
+datos = hola[,variablesnc]
+datos = datos[,-c(3,8,12)]
+```
+
+Imputamos los valores faltantes por la media y escalamos los datos ya que encontramos variables medidos en unidades diferentes y con magnitudes distintas.
+
+```{r}
+missingVar = colnames(datos)[apply(datos, 2, function (x) sum(is.na(x))) > 0]
+for (v in missingVar) {
+  datos[is.na(datos[,v]),v] = mean(datos[,v], na.rm = TRUE)
+}
+datos = scale(datos, center = TRUE, scale = TRUE)
+```
+
+A continuación, definimos nuestra matriz de distancias con la distancia euclídea ya que pretendemos encontrar datos que sean similares y esta puede ser una buena medida de distancia.
+
+```{r}
+midist <- get_dist(datos, stand = FALSE, method = "euclidean")
+#fviz_dist(midist, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+Realizaremos varios cálculos del estadístico de Hopkings para posteriormente hacer un resumen de los resultados obtenidos y valorar entre que valores se encuentra y si existe o no agrupamiento en los datos.
+
+```{r}
+set.seed(100)
+myN = c(20, 35, 50, 65)
+myhopkins = NULL
+myseed = sample(1:1000, 10)
+for (i in myN) {
+  for (j in myseed) {
+    tmp = get_clust_tendency(data = datos, n = i, graph = FALSE, seed = j)
+    myhopkins = c(myhopkins, tmp$hopkins_stat)
+  }
+}
+summary(myhopkins)
+```
+
+Como podemos observar el coeficiente de Silhouette medio es alto y oscila ente  0.83 y 0.87  , lo cual nos muestra que existe agrupamiento en los datos. La pregunta que nos hacemos es si el método Ward que emplearemos en este documento nos servirá para encontrar dicho agrupamiento.
+
+A continuación, hemos aplicado el método Ward y hemos creado diferentes grupos que corresponden a varias opciones respecto al número de clusters, que varía entre 2 y 7 según hemos creado en el código que aparece segudamente. Además mostraremos la cantidad de canciones que contiene cada cluster según los diferentes grupos definidos.
+
+```{r}
+clust1 <- hclust(midist, method="ward.D2")
+grupos1 <- cutree(clust1, k=2)
+grupos2 <- cutree(clust1, k=3)
+grupos3 <- cutree(clust1, k=4)
+grupos4 <- cutree(clust1, k=5)
+grupos5 <- cutree(clust1, k=6)
+grupos6 <- cutree(clust1, k=7)
+table(grupos1)
+table(grupos2)
+table(grupos3)
+table(grupos4)
+table(grupos5)
+table(grupos6)
+```
+
+Para validar cual sería el núnmero óptimo de clústers hemos creado un gráfico con estos en el eje X y en el eje Y el coeficiente de Silhouette. Nos interesa el coeficiente de Silhouette más alto, el cual indicará que con ese número de clústers existe un mayor agrupamiento en  nuestros datos.
+
+```{r}
+fviz_nbclust(x = datos, FUNcluster = hcut, method = "silhouette", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+```
+Como podemos ver, aparece qiue 2 es el mejor número de clusters según el método de Ward. Aunque 3 no parece una mala opción.
+
+Seguidamente hacemos lo mismo pero con la suma de cuadrados intra-cluster, esta, al contrario que con Silhouette preferimos que el valor sea el menor posible.
+
+```{r}
+fviz_nbclust(x = datos, FUNcluster = hcut, method = "wss", hc_method = "ward.D2",
+             k.max = 10, verbose = FALSE) +
+  labs(title = "Numero optimo de clusters")
+```
+Como podemos ver, nos interesaría tener 5 o 6 clusters según la suma de cuadrados intra-cluster.A partir de 6 no varía mucho la diferencia por lo que suponemos que los datos en este punto empiezan a sobreajustarse.
+
+Por último vamos a realizar la conclusión comprobando todos los índices posibles que nos proporciona la librería NbClust y confirmaremos el número de clusters que utilizaremos. 
+
+```{r}
+res.nbclust <- NbClust(data = datos, diss = midist, distance = NULL, min.nc = 2, max.nc = 10, method = "ward.D2", index ="all")
+```
+Como conclusión obtenemos que para el método ward, observando todos los índices, de acuerdo a la gran mayoría la mejor opción es utilizar 3 clusters.
+
+Seguidamente vamos a graficar la proyección en PCA de los 6 diferentes grupos que hemos creado y vamos a ver si hay alguno que separa nujestros datos considerablemente. 
+
+## k = 2
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos1), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=2") + theme_bw() + theme(legend.position = "bottom")
+```
+## k = 3
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos2), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=3") + theme_bw() + theme(legend.position = "bottom")
+```
+
+## k = 4
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos3), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=4") + theme_bw() + theme(legend.position = "bottom")
+```
+
+## k = 5
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos4), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=5") + theme_bw() + theme(legend.position = "bottom")
+```
+
+## k = 6
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos5), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=6") + theme_bw() + theme(legend.position = "bottom")
+```
+
+## k = 7
+
+```{r}
+fviz_cluster(object = list(data=datos, cluster=grupos6), stand = FALSE, ellipse.type = "convex", geom = "point", show.clust.cent = FALSE,labelsize = 8)  + labs(title = "Modelo jerarquico + Proyeccion PCA",subtitle = "Dist euclidea, Metodo Ward, K=7") + theme_bw() + theme(legend.position = "bottom")
+```
+
+
+Por último, observaremos el coeficiente de Silhouette para cada individuo en cada uno de los grupos creados con diferente número de clusters.
+
+```{r}
+par(mfrow = c(2,3))
+plot(silhouette(grupos1, midist), col=rainbow(2), border=NA, main = "WARD")
+plot(silhouette(grupos2, midist), col=rainbow(3), border=NA, main = "WARD")
+plot(silhouette(grupos3, midist), col=rainbow(4), border=NA, main = "WARD")
+plot(silhouette(grupos4, midist), col=rainbow(5), border=NA, main = "WARD")
+plot(silhouette(grupos5, midist), col=rainbow(6), border=NA, main = "WARD")
+plot(silhouette(grupos6, midist), col=rainbow(7), border=NA, main = "WARD")
+```
+Como conclusión se puede ver parece que 3 es el número de cluster con menos individuos mal asignados. Por lo que si utilizasemos este método emplearíamos 3 clusters. No obstante, como hemos visto  en la proyección PCA, Ward no nos ayuda a separar los grupos. De todas maneras, nos sirve para tener una idea de en que número fijar los clusters si aplicamos un método no jerárquico y partir de esta infoprmación nos puede ser de gran ayuda.
+
+
+
+
+
+
+
+
