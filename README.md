@@ -11,4 +11,7 @@ En este proyecto, mostraremos como nuestro equipo ha aprovechado toda esta infor
 
 ### Cómo navegar este proyecto
 * Memoria.pdf: Resultados y resumen del trabajo
-* Más información será subida en un futuro
+* Anexos memoria: Extensión de la memoria, descripciones, informes y explicación de código.
+* Scripts R y Python: Recopilación de gran parte del código utilizado durante el proyecto. Hay jupyter notebooks, RMarkdowns y archivos R
+* Informes: Informes detallados sobre diversos pasos del proyecto
+
