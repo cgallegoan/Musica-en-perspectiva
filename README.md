@@ -1,7 +1,7 @@
 # La música en perspectiva
 Análisis de las canciones de spotify y de su popularidad a través de sus variables musicales. Sistema recomendador de canciones.
 Proyecto llevado acabo por Carlos Gallego Andreu, Alejandro Losa Brito, Héctor Martínez Cabanes, Daniel Oliver Belando y Daniel Romero Alvarado para la asignatura de Proyecto II de Ciencia de Datos
-* **[Vídeo explicativo del proyecto]**(https://drive.google.com/file/d/19mdJmc3NHSFXmFUCQElX4Fcmp-sl-zgN/view?usp=sharing)
+* **[Vídeo explicativo del proyecto](https://drive.google.com/file/d/19mdJmc3NHSFXmFUCQElX4Fcmp-sl-zgN/view?usp=sharing)**
 
 ## Introducción
 Es indudable que la música forma una parte muy importante de nuestra vida, siempre ha sido una forma de expresar nuestros sentimientos y de unir socialmente a la gente, en todo tipo de festividades y celebraciones. La gran variedad de géneros hace que cada persona tenga unos gustos musicales únicos, que incluso llegan a formar parte de su personalidad y su identidad.
